@@ -15,8 +15,10 @@ module ActiveRecord::Associations::Builder # :nodoc:
   class Association # :nodoc:
     class << self
       attr_accessor :extensions
+      attr_accessor :custom_dependent_options
     end
     self.extensions = []
+    self.custom_dependent_options = {}
 
     VALID_OPTIONS = [
       :anonymous_class, :primary_key, :foreign_key, :dependent, :validate, :inverse_of, :strict_loading, :query_constraints, :deprecated
@@ -131,13 +133,56 @@ module ActiveRecord::Associations::Builder # :nodoc:
       raise NotImplementedError
     end
 
+    def self.register_dependent_option(name, handler_class = nil, &block)
+      option_name = name.to_sym
+      
+      # Check if the option name conflicts with built-in dependent options
+      built_in_options = [:destroy, :destroy_async, :delete, :delete_all, :nullify, :restrict_with_error, :restrict_with_exception]
+      if built_in_options.include?(option_name)
+        raise ArgumentError, "Cannot register custom dependent option :#{option_name} because it conflicts with a built-in dependent option"
+      end
+      
+      # Accept either a class or a block
+      if handler_class && block_given?
+        raise ArgumentError, "Cannot specify both a handler class and a block"
+      elsif handler_class
+        unless handler_class.respond_to?(:new) && handler_class.new.respond_to?(:call)
+          raise ArgumentError, "Handler class must implement a #call method"
+        end
+        self.custom_dependent_options = (custom_dependent_options || {}).merge(option_name => handler_class)
+      elsif block_given?
+        self.custom_dependent_options = (custom_dependent_options || {}).merge(option_name => block)
+      else
+        raise ArgumentError, "A handler class or block is required to register a dependent option"
+      end
+    end
+
+    def self.custom_dependent_option_handler(name)
+      handler = (custom_dependent_options || {})[name.to_sym]
+      return nil unless handler
+      
+      if handler.is_a?(Class)
+        # For classes, return a hash with both individual and bulk handlers
+        instance = handler.new
+        {
+          individual: ->(record) { instance.call(record) },
+          bulk: instance.respond_to?(:call_bulk) ? ->(association, target) { instance.call_bulk(association, target) } : nil
+        }
+      else
+        # For blocks, return the block directly (assuming it accepts individual records)
+        { individual: handler, bulk: nil }
+      end
+    end
+
     def self.check_dependent_options(dependent, model)
       if dependent == :destroy_async && !model.destroy_association_async_job
         err_message = "A valid destroy_association_async_job is required to use `dependent: :destroy_async` on associations"
         raise ActiveRecord::ConfigurationError, err_message
       end
-      unless valid_dependent_options.include?(dependent)
-        raise ArgumentError, "The :dependent option must be one of #{valid_dependent_options}, but is :#{dependent}"
+      
+      all_valid_options = valid_dependent_options + (custom_dependent_options || {}).keys
+      unless all_valid_options.include?(dependent)
+        raise ArgumentError, "The :dependent option must be one of #{all_valid_options}, but is :#{dependent}"
       end
     end
 
