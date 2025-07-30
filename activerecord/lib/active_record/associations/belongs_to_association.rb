@@ -33,6 +33,8 @@ module ActiveRecord
             association_primary_key_column: primary_key_column,
             ensuring_owner_was_method: options.fetch(:ensuring_owner_was, nil)
           )
+        elsif handler_info = ActiveRecord::Associations::Builder::Association.custom_dependent_option_handler(options[:dependent])
+          handler_info[:individual].call(target)
         else
           target.public_send(options[:dependent])
         end

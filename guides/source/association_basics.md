@@ -2653,6 +2653,83 @@ association. To manage deletions of join table records, handle them manually or
 switch to a `has_many :through` association, which provides more flexibility and
 supports the `:dependent` option.
 
+##### Custom Dependent Options
+
+In addition to the built-in dependent options (`:destroy`, `:delete`, `:nullify`, `:restrict_with_exception`, `:restrict_with_error`), you can register custom dependent options to implement specialized cleanup behavior when associations are destroyed.
+
+###### Registering Custom Options
+
+Use `ActiveRecord::Associations::Builder::Association.register_dependent_option` to register custom handlers:
+
+```ruby
+# Register a custom dependent option with a class handler
+class ArchiveHandler
+  def self.call(record)
+    # Archive the record instead of deleting it
+    record.update!(archived_at: Time.current)
+  end
+end
+
+ActiveRecord::Associations::Builder::Association.register_dependent_option(
+  :archive, ArchiveHandler
+)
+
+# Register a custom dependent option with a block handler
+ActiveRecord::Associations::Builder::Association.register_dependent_option(:log_deletion) do |record|
+  Rails.logger.info "Deleting #{record.class.name} #{record.id}"
+  record.destroy!
+end
+```
+
+###### Using Custom Options
+
+Once registered, custom options can be used like built-in options:
+
+```ruby
+class Author < ApplicationRecord
+  has_many :books, dependent: :archive
+  has_many :articles, dependent: :log_deletion
+end
+
+# When an author is destroyed:
+author = Author.find(1)
+author.destroy # Books will be archived, articles will be logged and destroyed
+```
+
+###### Bulk Operation Support
+
+For better performance with large collections, handlers can implement a `call_bulk` method for bulk operations:
+
+```ruby
+class BulkArchiveHandler
+  def self.call(record)
+    # Handle individual record
+    record.update!(archived_at: Time.current)
+  end
+  
+  def self.call_bulk(association, target)
+    # Handle bulk operation for better performance
+    target.update_all(archived_at: Time.current)
+  end
+end
+
+ActiveRecord::Associations::Builder::Association.register_dependent_option(
+  :bulk_archive, BulkArchiveHandler
+)
+```
+
+When `call_bulk` is defined, it will be used for `has_many` associations where bulk operations are more efficient. Individual record processing (`call`) is used for `has_one` and `belongs_to` associations.
+
+###### Handler Requirements
+
+Custom dependent option handlers must:
+
+- Implement a `call` method (class method for class handlers, or be callable for block handlers)
+- Handle any errors appropriately within the handler
+- Be thread-safe if used in multi-threaded environments
+
+Custom option names cannot conflict with built-in dependent options (`:destroy`, `:delete`, `:nullify`, `:restrict_with_exception`, `:restrict_with_error`).
+
 #### `:foreign_key`
 
 By convention, Rails assumes that the column used to hold the foreign key on

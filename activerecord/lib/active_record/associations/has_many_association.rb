@@ -54,7 +54,17 @@ module ActiveRecord
             end
           end
         else
-          delete_all
+          # Check if this is a custom dependent option
+          if handler_info = ActiveRecord::Associations::Builder::Association.custom_dependent_option_handler(options[:dependent])
+            # For has_many, prefer bulk operations if available, otherwise loop through individually
+            if handler_info[:bulk]
+              handler_info[:bulk].call(self, target)
+            else
+              target.each { |record| handler_info[:individual].call(record) }
+            end
+          else
+            delete_all
+          end
         end
       end
 

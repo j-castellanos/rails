@@ -15,7 +15,8 @@ module ActiveRecord::Associations::Builder # :nodoc:
     end
 
     def self.valid_dependent_options
-      [:destroy, :destroy_async, :delete, :nullify, :restrict_with_error, :restrict_with_exception]
+      [:destroy, :destroy_async, :delete, :nullify, :restrict_with_error, :restrict_with_exception] + 
+      (Association.custom_dependent_options || {}).keys
     end
 
     def self.define_callbacks(model, reflection)

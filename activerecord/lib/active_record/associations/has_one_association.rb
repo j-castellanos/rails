@@ -19,7 +19,13 @@ module ActiveRecord
           end
 
         else
-          delete
+          # Check if this is a custom dependent option
+          if handler_info = ActiveRecord::Associations::Builder::Association.custom_dependent_option_handler(options[:dependent])
+            # For has_one, always use individual handler (no bulk operations)
+            handler_info[:individual].call(target) if load_target
+          else
+            delete
+          end
         end
       end
 
@@ -51,6 +57,11 @@ module ActiveRecord
             )
           when :nullify
             target.update_columns(nullified_owner_attributes) if target.persisted?
+          else
+            # Check if this is a custom dependent option
+            if handler_info = ActiveRecord::Associations::Builder::Association.custom_dependent_option_handler(method)
+              handler_info[:individual].call(target)
+            end
           end
         end
       end
